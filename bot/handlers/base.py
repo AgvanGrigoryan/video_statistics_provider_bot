@@ -1,5 +1,6 @@
+
 from aiogram import Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 router = Router(name="base")
@@ -21,10 +22,3 @@ async def cmd_start(message: Message) -> None:
             "Ты мне вопрос а я тебе число, Поехали!"
         )
     )
-
-@router.message()
-async def echo_handler(message: Message) -> None:
-    """ /start command handler
-    
-    """
-    await message.answer(text=message.text)

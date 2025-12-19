@@ -35,7 +35,7 @@ services:
     volumes:
       - ./bot:/app/bot
       - ./database:/app/database
-      # - ./services:/app/services
+      - ./services:/app/services
     command: python -m bot.main
 
 volumes:

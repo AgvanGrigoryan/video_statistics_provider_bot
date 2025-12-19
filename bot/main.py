@@ -8,6 +8,7 @@ from aiogram.enums import ParseMode
 
 from bot.config import settings
 from bot.handlers.base import router as base_router
+from bot.handlers.messages import router as messages_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +33,7 @@ async def main() -> None:
     dp = Dispatcher()
 
     dp.include_router(base_router)
+    dp.include_router(messages_router)
     
     logger.info("Starting bot...")
 
