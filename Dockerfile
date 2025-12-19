@@ -11,14 +11,12 @@ FROM base as builder
 
 RUN pip install --no-cache-dir --upgrade pip
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 FROM base
 
-COPY --from=builder /root/.local /root/.local
-
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder /usr/local /usr/local
 
 COPY . .
 
