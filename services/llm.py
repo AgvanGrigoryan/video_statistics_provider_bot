@@ -1,4 +1,6 @@
+import json
 import logging
+from json import JSONDecodeError
 
 from openai import (
     APIConnectionError,
@@ -52,9 +54,7 @@ class LLMService:
         try:
             response = await self._client.chat.completions.create(
                 model=self._model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
+                messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 # response format is not ready yet
@@ -97,6 +97,85 @@ class LLMService:
         except Exception as e:
             logger.exception(f"Unexpected LLM error: {e}")
             raise LLMServiceError("Unexpected LLM error occurred.") from e
+
+    async def ask_with_tools(
+        self,
+        prompt: str,
+        tools: list[dict],
+        system_prompt: str | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 1000,
+    ) -> dict:
+        messages: list[dict[str, str]] = []
+        
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                tool_choice={"type": "function", "function": {"name": "extract_query_intent"}},
+                # response format is not ready yet
+                # response_format={
+                #     "type": "json_schema",
+                #     "json_schema": {...}
+                # }
+            )
+
+            choice = response.choices[0].message
+
+            if not choice.tool_calls:
+                raise LLMServiceError("LLM не вернул структурированный ответ")
+
+            tool_call = choice.tool_calls[0]
+
+            if tool_call.function.name != "extract_query_intent":
+                raise LLMServiceError("Unexpected function name")
+
+            try:
+                data = json.loads(tool_call.function.arguments)
+                return data
+            except JSONDecodeError as e:
+                raise LLMServiceError("Invalid JSON from LLM") from e
+
+        except (AuthenticationError, PermissionDeniedError) as e:
+            logger.error(f"LLM auth/permission error: {e}")
+            raise LLMServiceError("LLM authentication failed. Contact admin.") from e
+
+        except RateLimitError as e:
+            logger.warning(f"LLM rate limit exceeded: {e}")
+            raise LLMServiceError("LLM temporarily unavailable due to rate limits.") from e
+
+        except (BadRequestError, UnprocessableEntityError) as e:
+            logger.error(f"LLM invalid request: {e}")
+            raise LLMServiceError("Invalid request to LLM.") from e
+
+        except NotFoundError as e:
+            logger.error(f"LLM model not found: {e}")
+            raise LLMServiceError("Requested LLM model not available.") from e
+
+        except InternalServerError as e:  # явно ловим 500+
+            logger.error(f"LLM internal server error: {e}")
+            raise LLMServiceError("LLM service encountered an internal error.") from e
+
+        except APIConnectionError as e:
+            logger.error(f"LLM network error: {e}")
+            raise LLMServiceError("LLM service temporarily unavailable. Network issue.") from e
+
+        except APIError as e:
+            logger.error(f"LLM API error: {e.status_code} - {e}")
+            raise LLMServiceError("LLM service encountered an API error.") from e
+
+        except Exception as e:
+            logger.exception(f"Unexpected LLM error: {e}")
+            raise LLMServiceError("Unexpected LLM error occurred.") from e
+
 
 # May be useful
 # Using types

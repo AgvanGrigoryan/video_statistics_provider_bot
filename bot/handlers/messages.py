@@ -1,7 +1,9 @@
 from aiogram import Router
 from aiogram.types import Message
 
-from services.llm import LLMServiceError, llm_service
+from services.llm import LLMServiceError
+from services.nlp.exceptions import NLPParseError
+from services.nlp.service import nlp_service
 
 router = Router(name="messages")
 
@@ -13,7 +15,10 @@ async def llm_handler(message: Message) -> None:
             action="typing"
         )
     try:
-        output=await llm_service.ask(message.text)
-        await message.answer(text=output)
+        output = await nlp_service.parse_nl(message.text)
+        
+        await message.answer(text=output.model_dump_json())
     except LLMServiceError as e:
         await message.answer(e.user_message)
+    except NLPParseError as e:
+        await message.answer(f"{e}.\n Попробуйте переформулировать запрос.")
