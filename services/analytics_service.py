@@ -1,8 +1,7 @@
 # services/analytics_service.py
-
 import logging
+import re
 from typing import Any
-
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnalyticsError(Exception):
-    """Ошибка выполнения аналитического запроса."""
+    """Database execution error."""
     
     def __init__(self, user_message: str):
         super().__init__(user_message)
@@ -23,9 +22,7 @@ class AnalyticsError(Exception):
 
 
 class AnalyticsService:
-    """
-    Orchestrates NLP → SQL → Database execution pipeline.
-    """
+    """Orchestrates NLP → SQL → Database execution pipeline."""
     
     async def process_user_query(
         self,
@@ -50,15 +47,17 @@ class AnalyticsService:
         logger.info(f"Processing: {user_message[:100]}...")
         parsed_query = await nlp_service.parse_nl(user_message)
         
-        # Step 2: Generate SQL
+        # Step 2: Generate SQL with $1, $2 placeholders
         sql, params = query_builder.build_sql(parsed_query)
         logger.info(f"SQL: {sql}")
         logger.debug(f"Params: {params}")
         
         # Step 3: Execute query
         try:
-            # Конвертируем $1, $2 в :param_1, :param_2 для SQLAlchemy
+            # Convert $1, $2 to :param_1, :param_2 for SQLAlchemy
             sql_alchemy, params_dict = self._prepare_query(sql, params)
+            logger.debug(f"SQLAlchemy SQL: {sql_alchemy}")
+            logger.debug(f"SQLAlchemy params: {params_dict}")
             
             result = await session.execute(text(sql_alchemy), params_dict)
             row = result.scalar()
@@ -70,8 +69,12 @@ class AnalyticsService:
             return int(row)
         
         except SQLAlchemyError as e:
-            logger.error(f"Database error: {e}")
+            logger.error(f"Database error: {e}", exc_info=True)
             raise AnalyticsError("Ошибка выполнения запроса к базе данных") from e
+        
+        except Exception as e:
+            logger.exception(f"Unexpected error during query execution: {e}")
+            raise AnalyticsError("Неожиданная ошибка при выполнении запроса") from e
     
     def _prepare_query(
         self, 
@@ -80,6 +83,9 @@ class AnalyticsService:
     ) -> tuple[str, dict[str, Any]]:
         """
         Convert asyncpg-style $1, $2 to SQLAlchemy-style :param_1, :param_2.
+        
+        Uses regex replacement in reverse order to avoid issues with
+        $1 being replaced inside $10, $11, etc.
         
         Args:
             sql: SQL with $1, $2, ... placeholders
@@ -90,11 +96,18 @@ class AnalyticsService:
         """
         params_dict = {}
         
-        for i, value in enumerate(params, start=1):
+        # Replace in REVERSE order: $10, $9, ..., $2, $1
+        # This prevents $1 from matching inside $10
+        for i in range(len(params), 0, -1):
             placeholder = f"${i}"
             param_name = f"param_{i}"
-            sql = sql.replace(placeholder, f":{param_name}")
-            params_dict[param_name] = value
+            
+            # Use regex with word boundary to match exactly $N
+            # \b ensures we don't match $1 inside $10
+            pattern = re.escape(placeholder) + r'\b'
+            sql = re.sub(pattern, f":{param_name}", sql)
+            
+            params_dict[param_name] = params[i - 1]
         
         return sql, params_dict
 

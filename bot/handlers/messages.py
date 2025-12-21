@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import Router
 from aiogram.types import Message
 
@@ -7,6 +9,8 @@ from services.llm import LLMServiceError
 from services.nlp.exceptions import NLPParseError
 
 router = Router(name="messages")
+
+logger = logging.getLogger(__name__)
 
 @router.message()
 async def llm_handler(message: Message) -> None:
@@ -28,5 +32,6 @@ async def llm_handler(message: Message) -> None:
         await message.answer(f"{e}.\n Попробуйте переформулировать запрос.")
     except AnalyticsError as e:
         await message.answer(f"<b>Ошибка БД</b>\n\n{e.user_message}")
-    except Exception :
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
         await message.answer("❌ Внутренняя ошибка бота")
