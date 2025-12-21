@@ -1,9 +1,10 @@
 from aiogram import Router
 from aiogram.types import Message
 
+from database.engine import get_async_session
+from services.analytics_service import AnalyticsError, analytics_service
 from services.llm import LLMServiceError
 from services.nlp.exceptions import NLPParseError
-from services.nlp.service import nlp_service
 
 router = Router(name="messages")
 
@@ -15,10 +16,17 @@ async def llm_handler(message: Message) -> None:
             action="typing"
         )
     try:
-        output = await nlp_service.parse_nl(message.text)
-        
-        await message.answer(text=output.model_dump_json())
+        async for session in get_async_session():
+            result = await analytics_service.process_user_query(
+                user_message=message.text,
+                session=session,
+            )
+        await message.answer(text=str(result))
     except LLMServiceError as e:
         await message.answer(e.user_message)
     except NLPParseError as e:
         await message.answer(f"{e}.\n Попробуйте переформулировать запрос.")
+    except AnalyticsError as e:
+        await message.answer(f"<b>Ошибка БД</b>\n\n{e.user_message}")
+    except Exception :
+        await message.answer("❌ Внутренняя ошибка бота")
