@@ -1,5 +1,3 @@
-
-
 STATISTICS_TOOL_SCHEMA = {
     "type": "object",
     "properties": {
@@ -40,7 +38,8 @@ STATISTICS_TOOL_SCHEMA = {
                     "description": "Поле агрегации"
                 }
             },
-            "required": ["function", "field"]
+            "required": ["function", "field"],
+            "additionalProperties": False
         },
         "filters": {
             "type": "array",
@@ -85,7 +84,8 @@ STATISTICS_TOOL_SCHEMA = {
                         ]
                     }
                 },
-                "required": ["field", "operator", "value"]
+                "required": ["field", "operator", "value"],
+                "additionalProperties": False
             }
         },
         "date_range": {
@@ -105,10 +105,12 @@ STATISTICS_TOOL_SCHEMA = {
                     "format": "date"
                 }
             },
-            "required": ["field", "start", "end"]
+            "required": ["field", "start", "end"],
+            "additionalProperties": False
         }
     },
-    "required": ["query_type", "data_source", "aggregation"]
+    "required": ["query_type", "data_source", "aggregation"],
+    "additionalProperties": False
 }
 
 

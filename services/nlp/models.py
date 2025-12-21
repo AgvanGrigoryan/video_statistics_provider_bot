@@ -6,20 +6,31 @@ TABLE_FIELDS = {
     "videos": {
         "aggregation_fields": {
             "count": {"*", "id"},
-            "count_distinct": {"creator_id"},
-            "sum": set(),  # нельзя
+            "count_distinct": {"creator_id", "id"},
+            "sum": {
+                "views_count",
+                "likes_count",
+                "comments_count",
+                "reports_count",
+            },
         },
         "filter_fields": {
             "id",
             "creator_id",
             "video_created_at",
+            "views_count",
+            "likes_count",
+            "comments_count",
+            "reports_count",
         },
-        "date_fields": {"video_created_at"},
+        "date_fields": {
+            "video_created_at",
+        },
     },
     "video_snapshots": {
         "aggregation_fields": {
             "count": {"*", "id"},
-            "count_distinct": {"video_id"},
+            "count_distinct": {"video_id", "id"},
             "sum": {
                 "views_count",
                 "likes_count",
@@ -32,6 +43,7 @@ TABLE_FIELDS = {
             },
         },
         "filter_fields": {
+            "id",
             "video_id",
             "created_at",
             "views_count",
