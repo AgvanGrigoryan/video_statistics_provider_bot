@@ -1,4 +1,5 @@
 import logging
+
 from pydantic import ValidationError
 
 from services.llm import llm_service
@@ -6,6 +7,7 @@ from services.nlp.exceptions import NLPParseError
 from services.nlp.models import StatisticsQuery
 from services.nlp.statistics_prompt import system_prompt
 from services.nlp.statistics_schema import STATISTICS_TOOL
+from services.nlp.validators import validator
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +38,17 @@ class NLPService:
         )
         try:
             parsed = StatisticsQuery.model_validate(response)
-            logger.info(f"Зarsed: {parsed.data_source}.{parsed.aggregation.function}")
-            return parsed
         except ValidationError as e:
-            logger.error(f"Validation errors: {e.json(indent=2)}")
-            raise NLPParseError(
-                "Запрос не может быть интерпретирован"
-            ) from e
+            logger.error(f"Pydantic Validation errors: {e.json(indent=2)}")
+            raise NLPParseError("Невалидная структура") from e
 
+        try:
+            validator.validate_and_normalize(parsed)
+        except NLPParseError as e:
+            logger.error(f"Semantic Validation failed: {e}")
+            raise
+
+        logger.info(f"Parsed: {parsed.data_source}.{parsed.aggregation.function}")
+        return parsed
 
 nlp_service = NLPService()
