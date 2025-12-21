@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -68,13 +69,13 @@ class Aggregation(BaseModel):
 class Filter(BaseModel):
     field: str
     operator: Literal["eq", "gt", "gte", "lt", "lte", "between"]
-    value: str | int | float | list[str | int | float]
+    value: str | int | float | date | list[str | int | float | date]
 
 
 class DateRange(BaseModel):
     field: Literal["video_created_at", "created_at"]
-    start: str  # YYYY-MM-DD
-    end: str    # YYYY-MM-DD
+    start: str | date  # YYYY-MM-DD
+    end: str | date    # YYYY-MM-DD
 
 
 class StatisticsQuery(BaseModel):

@@ -1,5 +1,7 @@
+# services/nlp/validators.py
 import re
 from datetime import date, datetime
+from uuid import UUID
 
 from services.nlp.exceptions import NLPParseError
 from services.nlp.models import TABLE_FIELDS, StatisticsQuery
@@ -50,6 +52,44 @@ def parse_number(value: int | float | str) -> int | float:
         raise NLPParseError(f"Cannot parse number: '{value}'")
 
 
+def validate_uuid(value: str, field_name: str) -> str:
+    """
+    Validate UUID format.
+    
+    Args:
+        value: UUID string (with or without dashes)
+        field_name: Name of the field (for error messages)
+    
+    Returns:
+        Normalized UUID string
+        
+    Raises:
+        NLPParseError: If UUID format is invalid
+    """
+    if not isinstance(value, str):
+        raise NLPParseError(
+            f"Field '{field_name}' must be UUID string, got: {type(value).__name__}"
+        )
+    
+    # Remove spaces
+    value = value.strip()
+    
+    # Try to parse as UUID to validate format
+    try:
+        # UUID() accepts both formats: with and without dashes
+        uuid_obj = UUID(value)
+        
+        # Return original format (preserve dashes/no-dashes as provided)
+        return value
+        
+    except ValueError:
+        raise NLPParseError(
+            f"Invalid UUID format for field '{field_name}': '{value}'. "
+            f"Expected UUID (e.g., 'ecd8a4e4-1f24-4b97-a944-35d17078ce7c' or "
+            f"'aca1061a9d324ecf8c3fa2bb32d7be63')"
+        )
+
+
 def _get_numeric_fields() -> set[str]:
     """Extract all numeric fields from TABLE_FIELDS."""
     numeric = set()
@@ -59,7 +99,13 @@ def _get_numeric_fields() -> set[str]:
     return numeric
 
 
+def _get_uuid_fields() -> set[str]:
+    """Get all UUID fields (id, video_id, creator_id)."""
+    return {"id", "video_id", "creator_id"}
+
+
 NUMERIC_FIELDS = _get_numeric_fields()
+UUID_FIELDS = _get_uuid_fields()
 
 
 class QueryValidator:
@@ -69,18 +115,22 @@ class QueryValidator:
         """
         Validate and normalize query values in-place.
         
-        Normalizes dates to YYYY-MM-DD and numbers to int/float.
+        Normalizes:
+        - Dates to YYYY-MM-DD
+        - Numbers to int/float
+        - UUIDs (validates format)
+        
         Mutates the query object.
         """
         self._validate_and_normalize_dates(query)
         self._validate_and_normalize_filters(query)
     
     def _validate_and_normalize_dates(self, query: StatisticsQuery) -> None:
-        """Validate and normalize dates."""
+        """Validate and normalize dates to date objects."""
         today = date.today()
         
         if query.date_range:
-            start = parse_date(query.date_range.start)
+            start = parse_date(query.date_range.start)  # str → date
             end = parse_date(query.date_range.end)
             
             if start > end:
@@ -89,8 +139,9 @@ class QueryValidator:
             if end > today:
                 raise NLPParseError(f"End date ({end}) cannot be in the future")
             
-            query.date_range.start = start.isoformat()
-            query.date_range.end = end.isoformat()
+            # ✅ Теперь можем присвоить date объекты!
+            query.date_range.start = start  # type: date
+            query.date_range.end = end      # type: date
         
         date_fields = TABLE_FIELDS[query.data_source]["date_fields"]
         
@@ -104,13 +155,14 @@ class QueryValidator:
                     d = parse_date(v)
                     if d > today:
                         raise NLPParseError(f"Date in filter ({d}) cannot be in the future")
-                    normalized.append(d.isoformat())
+                    normalized.append(d)  # ✅ date объект
                 f.value = normalized
             else:
                 d = parse_date(f.value)
                 if d > today:
                     raise NLPParseError(f"Date in filter ({d}) cannot be in the future")
-                f.value = d.isoformat()
+                f.value = d  # ✅ date объект
+
     
     def _validate_and_normalize_filters(self, query: StatisticsQuery) -> None:
         """Validate and normalize filters."""
@@ -124,6 +176,16 @@ class QueryValidator:
                     f"Field '{f.field}' not available in '{query.data_source}'"
                 )
             
+            # Validate UUID fields
+            if f.field in UUID_FIELDS:
+                if isinstance(f.value, list):
+                    # For 'between' or 'in' operators (though unusual for UUIDs)
+                    f.value = [validate_uuid(v, f.field) for v in f.value]
+                else:
+                    f.value = validate_uuid(f.value, f.field)
+                continue  # Skip numeric validation
+            
+            # Validate 'between' operator
             if f.operator == "between":
                 if not isinstance(f.value, list) or len(f.value) != 2:
                     raise NLPParseError(
@@ -133,6 +195,7 @@ class QueryValidator:
                 if f.field in NUMERIC_FIELDS:
                     f.value = [parse_number(v) for v in f.value]
             
+            # Normalize numeric fields
             if f.field in NUMERIC_FIELDS and f.operator in ("gt", "gte", "lt", "lte", "eq"):
                 f.value = parse_number(f.value)
 
