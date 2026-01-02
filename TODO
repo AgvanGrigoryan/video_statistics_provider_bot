@@ -1,0 +1,12 @@
+1. Refactor exception handling and logging system 
+2. write tests for existing parts
+3. Run non-working tests via new logging and exception handling system 
+to find problem source
+
+
+Non-working Cases:
+- Какое суммарное количество просмотров набрали все видео, опубликованные в июне 2025 года?.
+Ожидаемый ответ: 17668.
+
+- Сколько разных видео получали новые просмотры 27 ноября 2025?
+Ожидаемый ответ: 226
