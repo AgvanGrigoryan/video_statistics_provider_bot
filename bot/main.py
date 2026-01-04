@@ -9,17 +9,11 @@ from aiogram.enums import ParseMode
 from bot.config import settings
 from bot.handlers.base import router as base_router
 from bot.handlers.messages import router as messages_router
+from bot.logging import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+setup_logging(settings.LOG_LEVEL, use_colors=True)
 
 logger = logging.getLogger(__name__)
-
 
 async def main() -> None:
 
