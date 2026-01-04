@@ -46,13 +46,12 @@ class AnalyticsService:
                 f"{parsed_query.aggregation.function}({parsed_query.aggregation.field})"
             )
 
-            sql, params = query_builder.build_sql(parsed_query)
+            sql, params_dict = query_builder.build_sql(parsed_query)
             logger.debug(f"{ctx} SQL: {sql}")
-            logger.debug(f"{ctx} Params: {params}")
+            logger.debug(f"{ctx} Params: {params_dict}")
         
-
-            sql_alchemy, params_dict = self._prepare_query(sql, params)   
-            result = await session.execute(text(sql_alchemy), params_dict)
+  
+            result = await session.execute(text(sql), params_dict)
             value = result.scalar()
 
             if value is None:
@@ -97,42 +96,5 @@ class AnalyticsService:
                 message=f"Unexpected error: {e}",
                 user_message="Неожиданная ошибка сервера"
             ) from e
-
-
-    def _prepare_query(
-        self, 
-        sql: str, 
-        params: list[Any]
-    ) -> tuple[str, dict[str, Any]]:
-        """
-        Convert asyncpg-style $1, $2 to SQLAlchemy-style :param_1, :param_2.
-        
-        Uses regex replacement in reverse order to avoid issues with
-        $1 being replaced inside $10, $11, etc.
-        
-        Args:
-            sql: SQL with $1, $2, ... placeholders
-            params: List of parameter values
-        
-        Returns:
-            (sql_with_named_params, params_dict)
-        """
-        params_dict = {}
-        
-        # Replace in REVERSE order: $10, $9, ..., $2, $1
-        # This prevents $1 from matching inside $10
-        for i in range(len(params), 0, -1):
-            placeholder = f"${i}"
-            param_name = f"param_{i}"
-            
-            # Use regex with word boundary to match exactly $N
-            # \b ensures we don't match $1 inside $10
-            pattern = re.escape(placeholder) + r'\b'
-            sql = re.sub(pattern, f":{param_name}", sql)
-            
-            params_dict[param_name] = params[i - 1]
-        
-        return sql, params_dict
-
 
 analytics_service = AnalyticsService()

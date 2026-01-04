@@ -19,7 +19,7 @@ class QueryBuilder:
     ALLOWED_TABLES = {"videos", "video_snapshots"}
     ALLOWED_OPERATORS = {"eq", "gt", "gte", "lt", "lte", "between"}
     
-    def build_sql(self, query: StatisticsQuery) -> tuple[str, list[Any]]:
+    def build_sql(self, query: StatisticsQuery) -> tuple[str, dict[str, Any]]:
         """
         Generate parameterized SQL query for asyncpg-style placeholders ($1, $2).
         
@@ -87,7 +87,7 @@ class QueryBuilder:
                 user_message=f"Неизвестная функция агрегации: {func}"
             )
     
-    def _build_where(self, query: StatisticsQuery) -> tuple[list[str], list[Any]]:
+    def _build_where(self, query: StatisticsQuery) -> tuple[list[str], dict[str, Any]]:
         """
         Build WHERE clause from filters and date range.
         
@@ -95,17 +95,17 @@ class QueryBuilder:
             query: StatisticsQuery with filters and date_range
         
         Returns:
-            Tuple of (condition list, parameter list)
+            Tuple of (condition list, parameter dict)
         """
         clauses: list[str] = []
-        params: list[Any] = []
+        params: dict[str, Any] = {}
         param_idx = 1
         
         # Process filters
         for f in query.filters:
             clause, new_params, param_idx = self._build_filter_clause(f, param_idx)
             clauses.append(clause)
-            params.extend(new_params)
+            params.update(new_params)
         
         # Process date_range
         if query.date_range:
@@ -114,8 +114,9 @@ class QueryBuilder:
             # SQL injection protection
             self._validate_field(dr.field)
             
-            clauses.append(f"{dr.field} BETWEEN ${param_idx} AND ${param_idx + 1}")
-            params.extend([dr.start, dr.end])
+            clauses.append(f"{dr.field} BETWEEN :param_{param_idx} AND :param_{param_idx + 1}")
+            params[f"param_{param_idx}"] = dr.start
+            params[f"param_{param_idx + 1}"] = dr.end
             param_idx += 2
         
         return clauses, params
@@ -124,7 +125,7 @@ class QueryBuilder:
         self, 
         f: Filter, 
         start_idx: int
-    ) -> tuple[str, list[Any], int]:
+    ) -> tuple[str, dict[str, Any], int]:
         """
         Build single WHERE condition with parameterized values.
         
@@ -149,21 +150,21 @@ class QueryBuilder:
                 message=f"Invalid operator: {op}",
                 user_message=f"Недопустимый оператор: {op}"
             )
-        
+        param_name = f"param_{start_idx}"
         if op == "eq":
-            return f"{field} = ${start_idx}", [value], start_idx + 1
+            return f"{field} = :{param_name}", {param_name: value}, start_idx + 1
         
         elif op == "gt":
-            return f"{field} > ${start_idx}", [value], start_idx + 1
+            return f"{field} > :{param_name}", {param_name: value}, start_idx + 1
         
         elif op == "gte":
-            return f"{field} >= ${start_idx}", [value], start_idx + 1
+            return f"{field} >= :{param_name}", {param_name: value}, start_idx + 1
         
         elif op == "lt":
-            return f"{field} < ${start_idx}", [value], start_idx + 1
+            return f"{field} < :{param_name}", {param_name: value}, start_idx + 1
         
         elif op == "lte":
-            return f"{field} <= ${start_idx}", [value], start_idx + 1
+            return f"{field} <= :{param_name}", {param_name: value}, start_idx + 1
 
         elif op == "between":
             if not isinstance(value, (list, tuple)) or len(value) != 2:
@@ -171,8 +172,13 @@ class QueryBuilder:
                     message=f"Between requires 2 values, got: {value!r}",
                     user_message="Оператор 'between' требует два значения"
                 )
-            clause = f"{field} BETWEEN ${start_idx} AND ${start_idx + 1}"
-            return clause, [value[0], value[1]], start_idx + 2
+            param_name_1 = f"param_{start_idx}"
+            param_name_2 = f"param_{start_idx + 1}"
+
+            clause = f"{field} BETWEEN :{param_name_1} AND :{param_name_2}"
+            params = {param_name_1: value[0], param_name_2: value[1]}
+
+            return clause, params, start_idx + 2
         
         else:
             raise QueryBuildError(
