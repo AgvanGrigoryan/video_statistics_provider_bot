@@ -1,6 +1,7 @@
-# services/query_builder/builder.py
 from typing import Any
-from services.nlp.models import StatisticsQuery, Filter, Aggregation
+
+from services.exceptions import QueryBuildError
+from services.nlp.models import Aggregation, Filter, StatisticsQuery
 
 
 class QueryBuilder:
@@ -32,7 +33,10 @@ class QueryBuilder:
         
         # SQL injection protection
         if table not in self.ALLOWED_TABLES:
-            raise ValueError(f"Invalid table: {table}")
+            raise QueryBuildError(
+                message=f"Invalid table: {table}",
+                user_message=f"Недопустимая таблица: {table}"
+            )
         
         select_clause = self._build_select(query.aggregation)
         where_clauses, params = self._build_where(query)
@@ -47,7 +51,10 @@ class QueryBuilder:
     def _validate_field(self, field: str) -> None:
         """Validate field name against whitelist (SQL injection protection)."""
         if field not in self.ALLOWED_FIELDS:
-            raise ValueError(f"Invalid field name: {field}")
+            raise QueryBuildError(
+                message=f"Invalid field name: {field}",
+                user_message=f"Недопустимое поле: {field}"
+            )
     
     def _build_select(self, agg: Aggregation) -> str:
         """
@@ -60,7 +67,7 @@ class QueryBuilder:
             SQL SELECT clause string
             
         Raises:
-            ValueError: If aggregation function is unknown
+            QueryBuildError: If aggregation function is unknown
         """
         func = agg.function.upper()
         field = agg.field
@@ -75,7 +82,10 @@ class QueryBuilder:
         elif func == "COUNT_DISTINCT":
             return f"COUNT(DISTINCT {field})"
         else:
-            raise ValueError(f"Unknown aggregation function: {func}")
+            raise QueryBuildError(
+                message=f"Unknown aggregation function: {func}",
+                user_message=f"Неизвестная функция агрегации: {func}"
+            )
     
     def _build_where(self, query: StatisticsQuery) -> tuple[list[str], list[Any]]:
         """
@@ -126,7 +136,7 @@ class QueryBuilder:
             Tuple of (condition string, values, next index)
             
         Raises:
-            ValueError: If operator is unknown or between value is invalid
+            QueryBuildError: If operator is unknown or between value is invalid
         """
         field = f.field
         op = f.operator
@@ -135,7 +145,10 @@ class QueryBuilder:
         # SQL injection protection
         self._validate_field(field)
         if op not in self.ALLOWED_OPERATORS:
-            raise ValueError(f"Invalid operator: {op}")
+            raise QueryBuildError(
+                message=f"Invalid operator: {op}",
+                user_message=f"Недопустимый оператор: {op}"
+            )
         
         if op == "eq":
             return f"{field} = ${start_idx}", [value], start_idx + 1
@@ -151,17 +164,21 @@ class QueryBuilder:
         
         elif op == "lte":
             return f"{field} <= ${start_idx}", [value], start_idx + 1
-        
+
         elif op == "between":
             if not isinstance(value, (list, tuple)) or len(value) != 2:
-                raise ValueError(
-                    f"Operator 'between' requires list of 2 values, got: {value!r}"
+                raise QueryBuildError(
+                    message=f"Between requires 2 values, got: {value!r}",
+                    user_message="Оператор 'between' требует два значения"
                 )
             clause = f"{field} BETWEEN ${start_idx} AND ${start_idx + 1}"
             return clause, [value[0], value[1]], start_idx + 2
         
         else:
-            raise ValueError(f"Unknown operator: {op}")
+            raise QueryBuildError(
+                message=f"Unknown operator: {op}",
+                user_message=f"Неизвестный оператор: {op}"
+            )
 
 
 query_builder = QueryBuilder()

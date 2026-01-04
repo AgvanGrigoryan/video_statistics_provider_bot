@@ -1,26 +1,29 @@
-# services/nlp/validators.py
 import re
 from datetime import date, datetime
 from uuid import UUID
 
-from services.nlp.exceptions import NLPParseError
+from services.exceptions import NLPParseError
 from services.nlp.models import TABLE_FIELDS, StatisticsQuery
 
 
 def parse_date(value: str) -> date:
     """Parse date from ISO format string (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)."""
     if not isinstance(value, str):
-        raise NLPParseError(f"Date must be string, got: {type(value).__name__}")
-    
+        raise NLPParseError(
+            message=f"Date must be string, got: {type(value).__name__}",
+            user_message="Некорректный тип даты"
+        )
     try:
         dt = datetime.fromisoformat(value)
         return dt.date()
     except ValueError:
         try:
             return date.fromisoformat(value)
-        except ValueError:
-            raise NLPParseError(f"Invalid date format: '{value}'. Expected YYYY-MM-DD")
-
+        except ValueError as e:
+            raise NLPParseError(
+                message=f"Invalid date: {value}",
+                user_message="Некорректный формат даты"
+            ) from e
 
 def parse_number(value: int | float | str) -> int | float:
     """
@@ -48,8 +51,11 @@ def parse_number(value: int | float | str) -> int | float:
         if '.' in s_normalized:
             return float(s_normalized)
         return int(s_normalized)
-    except ValueError:
-        raise NLPParseError(f"Cannot parse number: '{value}'")
+    except ValueError as e:
+        raise NLPParseError(
+            message=f"Cannot parse number: {value}",
+            user_message=f"Не удалось распознать число: '{value}'"
+        ) from e
 
 
 def validate_uuid(value: str, field_name: str) -> str:
@@ -68,13 +74,13 @@ def validate_uuid(value: str, field_name: str) -> str:
     """
     if not isinstance(value, str):
         raise NLPParseError(
-            f"Field '{field_name}' must be UUID string, got: {type(value).__name__}"
+            message=f"UUID field must be string, got: {type(value).__name__}",
+            user_message=f"Поле '{field_name}' должно быть строкой"
         )
     
+    # Try to parse as UUID to validate format
     # Remove spaces
     value = value.strip()
-    
-    # Try to parse as UUID to validate format
     try:
         # UUID() accepts both formats: with and without dashes
         uuid_obj = UUID(value)
@@ -82,12 +88,11 @@ def validate_uuid(value: str, field_name: str) -> str:
         # Return original format (preserve dashes/no-dashes as provided)
         return value
         
-    except ValueError:
+    except ValueError as e:
         raise NLPParseError(
-            f"Invalid UUID format for field '{field_name}': '{value}'. "
-            f"Expected UUID (e.g., 'ecd8a4e4-1f24-4b97-a944-35d17078ce7c' or "
-            f"'aca1061a9d324ecf8c3fa2bb32d7be63')"
-        )
+            message=f"Invalid UUID format for field '{field_name}': '{value}'. ",
+            user_message=f"Некорректный формат UUID для поля '{field_name}'"
+        ) from e
 
 
 def _get_numeric_fields() -> set[str]:
@@ -134,12 +139,16 @@ class QueryValidator:
             end = parse_date(query.date_range.end)
             
             if start > end:
-                raise NLPParseError(f"Start date ({start}) is after end date ({end})")
+                raise NLPParseError(
+                    message=f"Start date {start} > end date {end}",
+                    user_message=f"Начальная дата ({start}) позже конечной ({end})"
+                )
             
             if end > today:
-                raise NLPParseError(f"End date ({end}) cannot be in the future")
-            
-            # ✅ Теперь можем присвоить date объекты!
+                raise NLPParseError(
+                    message=f"End date {end} is in future (today: {today})",
+                    user_message=f"Конечная дата ({end}) не может быть в будущем"
+                )
             query.date_range.start = start  # type: date
             query.date_range.end = end      # type: date
         
@@ -154,13 +163,19 @@ class QueryValidator:
                 for v in f.value:
                     d = parse_date(v)
                     if d > today:
-                        raise NLPParseError(f"Date in filter ({d}) cannot be in the future")
+                        raise NLPParseError(
+                            message=f"Date {d} is in future (today: {today})",
+                            user_message=f"Дата ({d}) не может быть в будущем"
+                        )
                     normalized.append(d)  # ✅ date объект
                 f.value = normalized
             else:
                 d = parse_date(f.value)
                 if d > today:
-                    raise NLPParseError(f"Date in filter ({d}) cannot be in the future")
+                    raise NLPParseError(
+                        message=f"Date {d} is in future (today: {today})",
+                        user_message=f"Дата ({d}) не может быть в будущем"
+                    )
                 f.value = d  # ✅ date объект
 
     
@@ -168,12 +183,16 @@ class QueryValidator:
         """Validate and normalize filters."""
         table_rules = TABLE_FIELDS.get(query.data_source)
         if not table_rules:
-            raise NLPParseError(f"Unknown data_source: {query.data_source}")
-        
+            raise NLPParseError(
+                message=f"Unknown data_source: {query.data_source}",
+                user_message=f"Неизвестная таблица: {query.data_source}"
+            )
+            
         for f in query.filters:
             if f.field not in table_rules["filter_fields"]:
                 raise NLPParseError(
-                    f"Field '{f.field}' not available in '{query.data_source}'"
+                    message=f"Field '{f.field}' not available in '{query.data_source}'",
+                    user_message=f"Поле '{f.field}' недоступно в таблице '{query.data_source}'"
                 )
             
             # Validate UUID fields
@@ -189,7 +208,8 @@ class QueryValidator:
             if f.operator == "between":
                 if not isinstance(f.value, list) or len(f.value) != 2:
                     raise NLPParseError(
-                        f"Operator 'between' requires array of two values, got: {f.value}"
+                        message=f"Operator 'between' requires array of two values, got: {f.value}",
+                        user_message="Оператор 'between' требует два значения"
                     )
                 
                 if f.field in NUMERIC_FIELDS:

@@ -1,9 +1,10 @@
+services/nlp/service.py:
 import logging
 
 from pydantic import ValidationError
 
+from services.exceptions import NLPParseError
 from services.llm import llm_service
-from services.nlp.exceptions import NLPParseError
 from services.nlp.models import StatisticsQuery
 from services.nlp.statistics_prompt import system_prompt
 from services.nlp.statistics_schema import STATISTICS_TOOL
@@ -25,10 +26,9 @@ class NLPService:
         Raises:
             NLPParseError: If the LLM returned an invalid response
         """
-        request_msg = (
-            f"Запрос: '{user_message}'\n"
-            "Верни JSON согласно схеме."
-        )
+        logger.debug(f"Parsing: {user_message[:100]}")
+
+        request_msg = (f"Запрос: '{user_message}'\nВерни JSON согласно схеме.")
 
         response: dict = await llm_service.ask_with_tools(
             prompt=request_msg,
@@ -39,13 +39,16 @@ class NLPService:
         try:
             parsed = StatisticsQuery.model_validate(response)
         except ValidationError as e:
-            logger.error(f"Pydantic Validation errors: {e.json(indent=2)}")
-            raise NLPParseError("Невалидная структура") from e
+            logger.error(f"Validation failed: {e.errors()}", exc_info=True)
+            raise NLPParseError(
+                message=f"Invalid LLM response structure: {e}",
+                user_message="LLM вернул некорректные данные"
+            ) from e
 
         try:
             validator.validate_and_normalize(parsed)
         except NLPParseError as e:
-            logger.error(f"Semantic Validation failed: {e}")
+            logger.warning(f"Semantic Validation failed: {e.message}")
             raise
 
         logger.info(f"Parsed: {parsed.data_source}.{parsed.aggregation.function}")
